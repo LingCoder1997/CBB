@@ -122,7 +122,6 @@ def save_data(image_array, path, reference_image_path):
         print(f"Error saving image to {path}: {e}")
 
 def consist_check(dicom_dir, mask_dir, label_file):
-    print("Attention, label file should only be in the format that each sample lays in one line and pos and cons seperated by a empty line")
     is_Exist(label_file)
     is_Exist(dicom_dir)
     is_Exist(mask_dir)
@@ -157,6 +156,21 @@ def consist_check(dicom_dir, mask_dir, label_file):
 
     return mask_dicom_found, temp_db
 
+def get_pos_neg_samples(label_file):
+
+    is_Exist(label_file)
+    with open(label_file, "r") as f:
+        lines = f.readlines()
+        sep_inex = lines.index("\n")
+        pos_samples = lines[:sep_inex]
+        neg_samples = lines[sep_inex+1:]
+
+        pos_samples = list(map(lambda x:x.strip(), pos_samples))
+        neg_samples = list(map(lambda x: x.strip(), neg_samples))
+
+        print("Found {} positive samples and {} negative samples".format(len(pos_samples),len(neg_samples)))
+
+        return pos_samples,neg_samples
 
 
 

@@ -7,6 +7,7 @@ CBB/myDecorator.py
 CBB/myDicom.py
 CBB/myExtractor.py
 CBB/myGeometry.py
+CBB/myHash.py
 CBB/myML.py
 CBB/myMetrics.py
 CBB/myRadiomics.py

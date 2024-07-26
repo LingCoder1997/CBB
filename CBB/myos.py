@@ -13,6 +13,12 @@ import re
 import os
 import os.path as osp
 
+def get_file_name(path, suffix=True):
+    if suffix:
+        return os.path.basename(path)
+    else:
+        return os.path.splitext(os.path.basename(path))[0]
+
 def check_path(path):
     if not osp.exists(path):
         print("The given path does not exist! Creat a new one")
