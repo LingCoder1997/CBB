@@ -106,7 +106,7 @@ def test_model(model, data, label=None, cm=False, ROC=False):
         model = joblib.load(model)
 
     features = model['feature_names']
-    # model = model['model']
+    model = model['model']
 
     X = data[features]
     y = data[label]

@@ -60,8 +60,7 @@ RF_param_grid = {
 LR_param_grid_L1 = {
             'C': [0.001, 0.01, 0.1, 1, 10, 100],
             'penalty': ['l1'],  # 正则化类型
-            'solver': ['liblinear', 'saga'],
-            'max_iter':[1000000,100000]
+            'solver': ['liblinear', 'saga']
         }
 
 LR_param_grid_L2 = {
