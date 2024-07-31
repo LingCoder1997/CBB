@@ -24,7 +24,7 @@ from CBB.cfg import _reset_figure
 from CBB.data_type import is_cate, round_down_to_nearest_half, round_up_to_nearest_half
 from CBB.myMetrics import Cal_CI, Cal_IQR, KsNormDetect
 from CBB.mydb import if_Nan_Exists, remove_nan
-from CBB.myos import auto_save_file, check_path
+from CBB.myos import auto_save_file, check_path, get_file_name
 from CBB.errors import *
 from pprint import pprint
 
@@ -558,11 +558,22 @@ def draw_boxplot(data, xkeys, ykey, jitter=False, sample_fraction=0.1, name=None
     plt.savefig(save_path)
     plt.close()
 
-def df2heatmap(df, title=None, fmt=".2f", figsize=(10, 8), annot=True, cmap="YlGnBu",save_path=None, **kwargs):
-    import seaborn as sns
+
+def df2heatmap(df, title=None, fmt=".4f", figsize=(10, 8), annot=True, cmap="YlGnBu", save_path=None, **kwargs):
     plt.figure(figsize=figsize)
     xlabel = kwargs.get("xlabel", "X")
     ylabel = kwargs.get("ylabel", "Y")
+    highlight_min = kwargs.get("highlight_min", False)
+    highlight_max = kwargs.get("highlight_max", False)
+
+    if isinstance(df, str):
+        if title is None:
+            title = osp.splitext(osp.basename(df))[0]
+        if save_path is None:
+            save_dir = osp.dirname(df)
+            save_path = osp.join(save_dir, f"{title}.jpg")
+        df = pd.read_csv(df, engine='python')
+
     try:
         heatmap = sns.heatmap(df, annot=annot, fmt=fmt, cmap=cmap)
     except ValueError as e:
@@ -573,14 +584,27 @@ def df2heatmap(df, title=None, fmt=".2f", figsize=(10, 8), annot=True, cmap="YlG
         else:
             # 如果异常不是无法将字符串转换为浮点数，则抛出异常
             raise e
+
+    # 高亮最小值和最大值
+    if highlight_min or highlight_max:
+        for i in range(df.shape[0]):
+            for j in range(df.shape[1]):
+                value = df.iloc[i, j]
+                if highlight_min and value == df.min().min():
+                    heatmap.add_patch(plt.Rectangle((j, i), 1, 1, fill=False, edgecolor='red', lw=3))
+                if highlight_max and value == df.max().max():
+                    heatmap.add_patch(plt.Rectangle((j, i), 1, 1, fill=False, edgecolor='blue', lw=3))
+
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    if title:
-        plt.title(title)
+    plt.title(title)
 
     if save_path is None:
-        save_path = check_path("./heatmaps")
-        save_path = osp.join(save_path,"heatmap_{}.jpg".format(title))
+        save_dir = "./heatmaps"
+        if not osp.exists(save_dir):
+            os.makedirs(save_dir)
+        save_path = osp.join(save_dir, f"heatmap_{title}.jpg")
+
     plt.savefig(save_path)
 
 def plot_line_graph(data, xkey, ykey, smoothness=0, axe=None):

@@ -3,6 +3,7 @@ CBB/__init__.py
 CBB/cfg.py
 CBB/data_type.py
 CBB/errors.py
+CBB/myCV.py
 CBB/myDecorator.py
 CBB/myDicom.py
 CBB/myExtractor.py

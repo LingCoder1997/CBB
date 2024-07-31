@@ -5,6 +5,8 @@ import seaborn as sns
 import os
 import os.path as osp
 import sys
+
+from CBB.myTools import read_data
 from CBB.myos import is_Exist
 import nibabel as nib
 import scipy
@@ -36,3 +38,21 @@ def Extract_max_VOI(data_path, save_path=None):
         sitk.WriteImage(largest_voi_img, osp.join(path, f"Max_{file_name}"))
     else:
         sitk.WriteImage(largest_voi_img, save_path)
+
+def get_VOIs(data_path):
+    data = read_data(data_path)
+    binary_data = (data > 0).astype(np.uint8)
+    sitk_binary_data = sitk.GetImageFromArray(binary_data)
+    labeled_data = sitk.GetArrayFromImage(sitk.ConnectedComponent(sitk_binary_data))
+    label_volumes = np.bincount(labeled_data.flatten())[1:]
+    return label_volumes
+
+def get_max_VOIs(data_path):
+    data = read_data(data_path)
+    binary_data = (data > 0).astype(np.uint8)
+    sitk_binary_data = sitk.GetImageFromArray(binary_data)
+    labeled_data = sitk.GetArrayFromImage(sitk.ConnectedComponent(sitk_binary_data))
+    label_volumes = np.bincount(labeled_data.flatten())[1:]
+    max_voi = max(label_volumes)
+    return max_voi
+

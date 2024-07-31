@@ -10,7 +10,9 @@
 '''
 import csv
 
-import pandas as pd 
+import pandas as pd
+import os
+import os.path as osp
 from scipy import stats
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score,f1_score,precision_score,recall_score
@@ -593,21 +595,23 @@ def generate_S_table(data, ykey, xkeys, cate_list=None, median=False, save_path=
         output_df.to_excel('./General_table/{}_general_({})_table.xlsx'.format(ykey[0], "AVG" if not median else "MED"))
     return output_df
 
-    if save_path:
-        try:
-            output_df.to_excel(save_path,encoding='utf-8')
-        except:
-            raise DataFrameGenerationFail("Filed to generate the DataFrame to path: {}".format(save_path))
-    else:
-        print("The saving path is not given, automatically save the file to the './General_table/{}_general_table.xlsx'".format(ykey[0]))
-        check_path("./General_table")
-        output_df.to_excel('./General_table/{}_general_table.xlsx'.format(ykey[0]))
-    return output_df
+def Calculate_mean_RSD(df_list, save_dir = None):
+    common_index = df_list[0].index
+    common_columns = df_list[0].columns
+    aligned_dfs = [df.reindex(index=common_index, columns=common_columns) for df in df_list]
+    data = np.array([df.values for df in aligned_dfs])
+    mean_df = pd.DataFrame(np.mean(data, axis=0), columns=df_list[0].columns, index=df_list[0].index)
+    std_df = pd.DataFrame(np.std(data, axis=0), columns=df_list[0].columns, index=df_list[0].index)
+    rsd_df = (std_df / mean_df) * 100
 
-if __name__ == '__main__':
-    data = pd.read_csv(r"D:\Pycharm_workplace\New_test\new_db.csv",engine='python')
-    xkeys = ['age','sex','Packyears','Smoker','Emphysema_score','Max_Nodule_size',"Nodule_above_100"]
-    ykey = "CAC_Above_100"
-    cate_list = ['Con','Cat','Con','Cat','Con','Con','Cat']
-    S_table = generate_S_table(data=data,xkeys=xkeys,ykey=ykey,cate_list=cate_list,save_path=r"D:\Pycharm_workplace\New_test\general_table.xlsx".format(ykey[0]))
+    if save_dir is None:
+        save_dir = check_path(r"./mean_rsd")
+    else:
+        check_path(save_dir)
+    mean_save = osp.join(save_dir, "mean_df.csv")
+    rsd_save = osp.join(save_dir,"rsd_df.csv")
+    mean_df.to_csv(mean_save)
+    rsd_df.to_csv(rsd_save)
+
+
 

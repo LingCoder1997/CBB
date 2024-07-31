@@ -46,7 +46,8 @@ def generate_feature_file(data_dir, mask_dir, save_path=None):
     is_Exist(mask_dir)
 
     masks, dcms = sorted(get_full_paths(mask_dir)), sorted(get_full_paths(data_dir))
-
+    mask_names, dicom_names = list(map(lambda x:osp.basename(x), masks)), list(map(lambda x:osp.basename(x), dcms))
+    assert mask_names == dicom_names,"Error! The mask is not compatible with dicoms"
     total_db = None
     success = 0
     failed = []
@@ -65,10 +66,12 @@ def generate_feature_file(data_dir, mask_dir, save_path=None):
     for (dcm, mask) in zip(dcms,masks):
         sample_name = osp.basename(dcm).split(".")[0]
         mask_name = osp.basename(mask).split(".")[0]
-        assert sample_name == mask_name,"Error! The executed dicom is not consist with mask {}".format(sample_name,mask_name)
+        assert sample_name == mask_name,"Error! The executed dicom {} is not consist with mask {}".format(sample_name,mask_name)
         print("Processing sample {}".format(sample_name))
         if dul_check:
             names = features_finished['name']
+            if names.dtype == np.int64:
+                names = list(map(lambda x: f"{x:03}", names))
             if sample_name in list(names):
                 print("Skip finished sample {}".format(sample_name))
                 continue
@@ -106,7 +109,7 @@ def test_model(model, data, label=None, cm=False, ROC=False):
         model = joblib.load(model)
 
     features = model['feature_names']
-    # model = model['model']
+    model = model['model']
 
     X = data[features]
     y = data[label]
