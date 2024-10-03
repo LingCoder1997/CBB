@@ -1,5 +1,3 @@
-import shutil
-
 import SimpleITK as sitk
 import os
 import os.path as osp
@@ -7,7 +5,8 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 import pydicom
-from CBB.myos import is_Exist, check_path, format_number, get_full_paths
+from CBB.myos import is_Exist, check_path, format_number
+
 
 def sep_100(var):
     return 0 if var < 100 else 1
@@ -174,44 +173,8 @@ def get_pos_neg_samples(label_file):
         return pos_samples,neg_samples
 
 
-def unzip_data(data_dir,save_dir = None):
-    # This function is useful to samples with format: "3D_CTCOV-XXX_20201124_2_masks.zip"
-
-    import zipfile
-    is_Exist(data_dir)
-    files = get_full_paths(data_dir)
-    if save_dir is None:
-        save_dir = data_dir
-    else:
-        check_path(save_dir)
-
-    for zf in files:
-        f = zipfile.ZipFile(zf, "r")
-        for sub_files in f.namelist():
-            file_name, suffix = sub_files.split(".")[0],sub_files.split(".")[1:]
-            save_path = osp.join(save_dir, file_name)
-            f.extract(sub_files, save_path)
-        f.close()
-    print("Unzip {} zip files".format(len(files)))
-    unziped_files=os.walk(save_dir)
-
-    for root, dirname, files in unziped_files:
-        if len(files) > 0:
-            for f in files:
-                file_name, suffix = f.split(".")[0].split("-")[1].split("_")[0] ,f.split(".")[1:]
-                suffix = ".".join(suffix)
-                shutil.move(osp.join(root, f), osp.join(save_dir,f"{file_name}.{suffix}"))
-            os.rmdir(root)
-    print("Move the extracted files in the target directory")
-
-
-def get_key_by_value(d, val):
-    for key, value in d.items():
-        if value == val:
-            return key
-    return None
-
 
 if __name__ == '__main__':
-    data_dir = r"D:\Pycharm_workplace\DATA_STORAGE\Others\masks"
-    unzip_data(data_dir, osp.join(data_dir,"test_dir"))
+    sample_nii = r"D:\Pycharm_workplace\COVID19\COVID19_INFECTION_DB\Data\radiopaedia_4_85506_1.nii.gz"
+    output_dir = r"./sample"
+    nii2dicom(sample_nii,output_dir)
