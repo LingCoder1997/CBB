@@ -97,6 +97,83 @@ def generate_feature_file(data_dir, mask_dir, save_path=None):
             total_db.to_csv("./features.csv")
         else:
             total_db.to_csv("./features_update.csv")
+def get_full_paths(directory, mode=0):
+    """
+    获取指定目录下所有文件和子目录的完整路径
+
+    :param directory: 目标目录
+    :param mode: 0 - 返回所有文件和子目录的路径，1 - 仅返回文件路径，2 - 仅返回子目录路径
+    :return: 包含完整路径的列表
+    """
+    # 使用 os.listdir 获取目录下的所有文件名和子目录名
+    items = os.listdir(directory)
+    # 使用 os.path.join 将文件名或子目录名与目录路径拼接起来，得到完整路径
+    full_paths = [os.path.join(directory, item) for item in items]
+
+    if mode == 1:
+        # 仅保留文件路径
+        full_paths = [path for path in full_paths if os.path.isfile(path)]
+    elif mode == 2:
+        # 仅保留子目录路径
+        full_paths = [path for path in full_paths if os.path.isdir(path)]
+
+    return full_paths
+
+def new_generate_feature_table(data_dir, mask_dir, save_path=None):
+    is_Exist(data_dir)
+    is_Exist(mask_dir)
+
+    masks, dcms = sorted(get_full_paths(mask_dir)), sorted(get_full_paths(data_dir))
+    mask_names, dicom_names = list(map(lambda x: osp.basename(x), masks)), list(map(lambda x: osp.basename(x), dcms))
+    assert mask_names == dicom_names, "Error! The mask is not compatible with dicoms"
+
+    success = 0
+    failed = []
+
+    # 判断是否有已有的CSV文件
+    if save_path is not None and osp.exists(save_path):
+        check_file = save_path
+    elif osp.exists("./features.csv"):
+        check_file = "./features.csv"
+    else:
+        check_file = None
+
+    # 如果有已存在的CSV文件，读取已完成的特征
+    if check_file is not None:
+        features_finished = pd.read_csv(check_file, engine='python')
+        dul_check = True
+    else:
+        features_finished = pd.DataFrame()  # 空数据框
+        dul_check = False
+
+    # 遍历每个影像和对应的mask
+    for dcm, mask in zip(dcms, masks):
+        sample_name = osp.basename(dcm).split(".")[0]
+        print(f"Processing sample {sample_name}")
+
+        # 检查特征是否已经提取过
+        if dul_check and sample_name in features_finished['name'].values:
+            print(f"Skip finished sample {sample_name}")
+            continue
+
+        try:
+            features = feature_extraction(dcm, mask)
+            df = pd.DataFrame(features.values(), index=features.keys()).transpose()
+            df['name'] = sample_name
+
+            # 立即将当前提取的特征追加保存到CSV文件
+            if save_path is not None:
+                df.to_csv(save_path, mode='a', header=not osp.exists(save_path), index=False)
+            else:
+                df.to_csv("./features.csv", mode='a', header=not osp.exists("./features.csv"), index=False)
+
+            success += 1
+        except Exception as e:
+            print(f"Failed to extract features from sample {sample_name}: {e}")
+            failed.append(sample_name)
+
+    print(f"Feature extraction finished! Successfully processed {success} samples, Failed: {failed}")
+
 
 def test_model(model, data, label=None, cm=False, ROC=False):
     from sklearn.preprocessing import StandardScaler

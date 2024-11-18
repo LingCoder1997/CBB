@@ -172,7 +172,35 @@ def get_pos_neg_samples(label_file):
 
         return pos_samples,neg_samples
 
+def add_label(label_file,feature_file):
+    is_Exist(label_file)
+    is_Exist(feature_file)
+    pos_samples,neg_samples = get_pos_neg_samples(label_file)
+    pos_samples = list(map(lambda x:f"Patient_{x}", pos_samples))
+    neg_samples = list(map(lambda x: f"Patient_{x}", neg_samples))
 
+    general_features = pd.read_csv(feature_file)
+    general_features['label'] = general_features['name'].apply(lambda x:1 if x in pos_samples else (0 if x in neg_samples else None))
+    cols = ['name', 'label'] + [col for col in general_features.columns if col not in ['name', 'label']]
+    general_features = general_features[cols]
+    save_file = "Modif_" + osp.basename(feature_file)
+    save_path = osp.join(osp.dirname(feature_file), save_file)
+    general_features.to_csv(save_path, index=None)
+
+
+def compare_mask(mask1, mask2):
+
+    mask1 = mask1>0
+    mask2 = mask2>0
+
+def load_yaml_file(yaml_file):
+    import yaml
+    is_Exist(yaml_file)
+
+    f = open(yaml_file)
+    data = yaml.load(f)
+
+    return data
 
 if __name__ == '__main__':
     sample_nii = r"D:\Pycharm_workplace\COVID19\COVID19_INFECTION_DB\Data\radiopaedia_4_85506_1.nii.gz"

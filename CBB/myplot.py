@@ -21,7 +21,7 @@ from scipy.interpolate import UnivariateSpline
 from CBB.cfg import *
 from CBB.cfg import _reset_figure
 
-from CBB.data_type import is_cate, round_down_to_nearest_half, round_up_to_nearest_half
+from CBB.data_type import is_cate, round_down_to_nearest_half, round_up_to_nearest_half, variable_type
 from CBB.myMetrics import Cal_CI, Cal_IQR, KsNormDetect
 from CBB.mydb import if_Nan_Exists, remove_nan
 from CBB.myos import auto_save_file, check_path, get_file_name
@@ -90,6 +90,14 @@ def forest_plot(data,xkeys,ykey,cate_keys=None,order=None, save_path=None,verbos
     
     if cate_keys is not None:
         assert not ykey[0] in cate_keys,"Error! The cate_keys should not contain ykey"
+    else:
+        cate_keys = []
+        for col in xkeys:
+            if variable_type(data[col]) == "Cat":
+                cate_keys.append(col)
+            else:
+                continue
+        print("The cate_key is not given, auto-pred the cate-keys as below: \n{}".format(cate_keys))
     if len(set(cate_keys).difference(set(xkeys))) != 0:
         raise ValueError("The given cate_keys contains other keys {} that is not included by xkeys!".format(set(cate_keys).difference(set(xkeys))))
 

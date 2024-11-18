@@ -68,7 +68,7 @@ def is_cate(data):
         print("Data length check passed! The data seems like a categorical database!")
         return True
 
-def variable_type(column,str_out=False):
+def variable_type(column):
     unique_values = column.unique()
     num_unique_values = len(unique_values)
     total_values = len(column)
@@ -93,7 +93,8 @@ def round_down_to_nearest_half(number):
     
 def round_up_to_nearest_half(number):
     dec = number%1
-
+    if np.isinf(number):
+        return 10000
     if dec == 0:
         return number   
     elif dec - 0.5 > 0:

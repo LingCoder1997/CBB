@@ -12,7 +12,18 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
+from CBB.errors import StringfyColumnFailed
 from CBB.data_type import is_cate
+
+def stringfy_columns(df, col, f, inplace=False):
+    assert col in list(df.columns),"Error! The given name {} was not found from the dataframe".format(col)
+    try:
+        if not inplace:
+            df[f'{col}_str'] = df[col].apply(f)
+        else:
+            df[col] = df[col].apply(f)
+    except:
+        raise StringfyColumnFailed("Error! Failed to stringfy the column {}".format(col))
 
 
 def show_nan(data : pd.DataFrame):

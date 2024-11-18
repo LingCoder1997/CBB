@@ -9,7 +9,8 @@ from sklearn.linear_model import LassoCV
 
 from CBB.myTools import consist_check
 from CBB.myos import find_sample_files, is_Exist, check_path
-from feature_extraction import feature_extraction
+from my_feature_extractor import feature_extraction
+
 
 class FeatureSelector:
     def __init__(self, name="Default", top_N=10, dul_check=False, **kwargs):
