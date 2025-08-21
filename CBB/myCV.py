@@ -1,10 +1,11 @@
 import cv2
+import numpy
 import numpy as np
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
 from skimage.feature import graycomatrix, graycoprops
 import os
-
+import SimpleITK as sitk
 
 # 提取 ORB 特征点和描述符
 def extract_orb_features(image):
@@ -68,5 +69,113 @@ def display_match(test_image, best_match_idx, samples, keypoints_list, labels, t
     cv2.imshow(f"Best match: {labels[best_match_idx]}", result)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+def cropToTumorMask(imageNode, maskNode, boundingBox):
+  """
+  Create a sitkImage of the segmented region of the image based on the input label.
+
+  Create a sitkImage of the labelled region of the image, cropped to have a
+  cuboid shape equal to the ijk boundaries of the label.
+
+  :param boundingBox: The bounding box used to crop the image. This is the bounding box as returned by
+    :py:func:`checkMask`.
+  :param label: [1], value of the label, onto which the image and mask must be cropped.
+  :return: Cropped image and mask (SimpleITK image instances).
+
+  """
+
+  size = numpy.array(maskNode.GetSize())
+
+  ijkMinBounds = boundingBox[0::2]
+  ijkMaxBounds = size - boundingBox[1::2]- 1
+
+  # Ensure cropped area is not outside original image bounds
+  ijkMinBounds = numpy.maximum(ijkMinBounds, 0)
+  ijkMaxBounds = numpy.maximum(ijkMaxBounds, 0)
+
+  # Crop Image
+  cif = sitk.CropImageFilter()
+  try:
+    cif.SetLowerBoundaryCropSize(ijkMinBounds)
+    cif.SetUpperBoundaryCropSize(ijkMaxBounds)
+  except TypeError:
+    # newer versions of SITK/python want a tuple or list
+    cif.SetLowerBoundaryCropSize(ijkMinBounds.tolist())
+    cif.SetUpperBoundaryCropSize(ijkMaxBounds.tolist())
+  croppedImageNode = cif.Execute(imageNode)
+  croppedMaskNode = cif.Execute(maskNode)
+
+  return croppedImageNode, croppedMaskNode
+
+def get_bin_edges(image, binWidth=25, binCount=None):
+    if binCount is not None:
+        binEdges = numpy.histogram(image, binCount)[1]
+        binEdges[-1] += 1  # Ensures that the maximum value is included in the topmost bin when using numpy.digitize
+    else:
+        minimum = min(image)
+        maximum = max(image)
+
+    lowBound = minimum - (minimum % binWidth)
+    highBound = maximum + 2 * binWidth
+
+    binEdges = numpy.arange(lowBound, highBound, binWidth)
+
+    if len(binEdges) == 1:  # Flat region, ensure that there is 1 bin
+      binEdges = [binEdges[0] - .5, binEdges[0] + .5]  # Simulates binEdges returned by numpy.histogram if bins = 1
+
+    return binEdges
+
+def bin_image(image, parameterMatrixCoordinates, binWidth=25, binCount=None):
+    discretizedParameterMatrix = numpy.zeros(image.shape, dtype='int')
+    binEdges = get_bin_edges(image[parameterMatrixCoordinates],  binWidth=binWidth, binCount=binCount)
+    discretizedParameterMatrix[parameterMatrixCoordinates] = numpy.digitize(image[parameterMatrixCoordinates],
+                                                                            binEdges)
+    return discretizedParameterMatrix, binEdges
+
+def cal_entropy(image,mask):
+    _,p_i = np.unique(image[mask],return_counts=True)
+    p_i = p_i.reshape((1, -1))
+    sumBins = np.sum(p_i, 1, keepdims=True).astype('float')
+    sumBins[sumBins == 0] = 1
+    p_i = p_i.astype('float') / sumBins
+    eps = np.spacing(1)
+    entropy = -1.0 * np.sum(p_i * np.log2(p_i + eps), 1)
+    return entropy
+def get_glcm_mat(bin_image, gray_levels=None):
+    if gray_levels is None:
+        gray_levels = len(np.unique(bin_image))
+    cur_gray = bin_image[:,:,:-1].flatten()
+    neightbor_gray = bin_image[:,:,1:].flatten()
+
+    glcm = np.zeros((gray_levels,gray_levels), dtype=np.int64)
+    np.add.at(glcm,(cur_gray,neightbor_gray),1)
+    return glcm
+
+if __name__ == '__main__':
+    bin_mat = [
+        [1, 2, 5, 2, 3],
+        [3, 2, 1, 3, 1],
+        [1, 3, 5, 5, 2],
+        [1, 1, 1, 1, 2],
+        [1, 2, 4, 3, 5]
+    ]
+
+    bin_mat = np.array(bin_mat)
+    unique_bin = np.unique(bin_mat)
+    value_to_index = {v: i for i, v in enumerate(unique_bin)}
+    mapped_bin_mat = np.vectorize(value_to_index.get)(bin_mat)
+    print(mapped_bin_mat)
+    bin_len = len(unique_bin)
+
+    glcm_mat = np.zeros((bin_len,bin_len),dtype=int)
+    print(glcm_mat)
+    left_mat = mapped_bin_mat[:, 1:].flatten()
+    right_mat = mapped_bin_mat[:,:-1].flatten()
+    np.add.at(glcm_mat,(left_mat, right_mat),1)
+    np.add.at(glcm_mat, (right_mat, left_mat), 1)
+    print(glcm_mat)
+
+
+
 
 

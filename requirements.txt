@@ -25,3 +25,6 @@ pygame~=2.5.2
 gym~=0.26.2
 scikit-image~=0.22.0
 gymnasium~=0.29.0
+PyYAML~=6.0.1
+skrebate~=0.62
+cupy-cuda102~=12.3.0

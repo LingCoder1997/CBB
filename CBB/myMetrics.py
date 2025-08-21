@@ -102,7 +102,6 @@ def Cal_Metrics(targets,preds,multi=None):
 
     return result
 
-
 def calculate_mean_rsd(matrices):
     if not isinstance(matrices, list):
         raise TypeError("Input must be a list of matrices.")
@@ -614,4 +613,29 @@ def Calculate_mean_RSD(df_list, save_dir = None):
     rsd_df.to_csv(rsd_save)
 
 
+def summarize_variables(df, Xs, cate_list, add_nan):
+    summary_dict = {}
 
+    for x,t in zip(Xs,cate_list):
+        if t == "cate":
+            counts = df[x].value_counts(dropna=True)
+            proportions = df[x].value_counts(normalize=True, dropna=not add_nan).round(4)
+            summary_df = pd.DataFrame({
+                "Count": counts,
+                "Proportion": proportions
+            })
+            summary_dict[x] = summary_df
+
+        elif t == "cont":
+            mean = df[x].mean(skipna=not add_nan)
+            std = df[x].std(skipna=not add_nan)
+            summary_df = pd.DataFrame({
+                "Mean": [round(mean, 4)],
+                "Std": [round(std, 4)]
+            }, index=[x])
+            summary_dict[x] = summary_df
+
+        else:
+            print(f"Warning: Unknown type '{t}' for column '{x}', skipping.")
+
+    return summary_dict

@@ -152,7 +152,7 @@ def new_generate_feature_table(data_dir, mask_dir, save_path=None):
         print(f"Processing sample {sample_name}")
 
         # 检查特征是否已经提取过
-        if dul_check and sample_name in features_finished['name'].values:
+        if dul_check and (sample_name in features_finished['name'].values or int(sample_name) in features_finished['name'].values):
             print(f"Skip finished sample {sample_name}")
             continue
 

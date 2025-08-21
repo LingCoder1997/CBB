@@ -653,3 +653,22 @@ def plot_line_graph(data, xkey, ykey, smoothness=0, axe=None):
 
     return axe
 
+def draw_waterfall(df,save_path=None):
+    assert "y_true" in list(df.columns) and "Rad_score" in list(df.columns),"Error! CANNOT find the name and label list from the dataframe"
+    plt.figure(figsize=(10, 6), dpi=300)
+    colors = df['y_true'].map({1: 'red', 0: 'blue'})
+    plt.bar(range(len(df)), df['Rad_score'], color=colors, edgecolor='black', width=0.8)
+    plt.axhline(0, color='green', linestyle='--', linewidth=2, label='Threshold')
+    plt.legend(['Threshold (0)', 'Positive (1)', 'Negative (0)'], loc='upper right', fontsize=12)
+    plt.title('Rad-score Waterfall Plot', fontsize=16)
+    plt.xlabel('Sample Index (sorted by Rad-score)', fontsize=12)
+    plt.ylabel('Rad-score', fontsize=12)
+    plt.grid(alpha=0.3)
+    if save_path is None:
+        save_dir = check_path(r"./plots")
+        save_path = osp.join(save_dir,"./waterfall.jpg")
+    plt.savefig(save_path)
+
+
+
+

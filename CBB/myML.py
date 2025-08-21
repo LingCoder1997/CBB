@@ -8,16 +8,24 @@
 @Version      : 0.0.0
 @Description  : This file contains the functions that are related to Machine learning algorithms
 '''
+import pickle
 
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import GridSearchCV
+import torch
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif, RFE
+from sklearn.metrics import confusion_matrix, roc_curve, auc
+from sklearn.model_selection import GridSearchCV, cross_val_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LassoCV
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
 import matplotlib.pyplot as plt 
 import seaborn as sns 
 import numpy as np
+from sklearn.tree import DecisionTreeClassifier
 
 from CBB.data_type import variable_type
 from CBB.myos import *
@@ -179,142 +187,6 @@ def generate_train_test_data(data,xkeys,ykey,class_name=None,ratio=0.25,random_s
 
     return X_train, X_test, y_train, y_test
 
-def NN_Analysis(data,xkeys,ykey,con_list = None,num_epochs=100, ratio=0.25,test=False,
-                metrics=False,ROC=False, save_path=None, random_state=42):
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import f1_score
-
-    for k in xkeys:
-        if k not in data.columns:
-            raise KeyError("Error! The given key {} is not included in the column names".format(k))
-    if isinstance(ykey, str):
-        ykey = [ykey]
-    keys = xkeys + ykey
-    temp_db = data[keys]
-    if if_Nan_Exists(temp_db):
-        print(show_nan(temp_db))
-        temp_db.dropna(inplace=True)
-
-    scaler = StandardScaler()
-    if con_list is None:
-        con_list = []
-        for col in xkeys:
-            if variable_type(data[col]) == "Cat":
-                continue
-            else:
-                con_list.append(col)
-
-    data[con_list] = scaler.fit_transform(data[con_list])
-    X = temp_db[xkeys].values
-    y = temp_db[ykey].values  # lung_nodule_label 是是否有大于100立方毫米的肺结节的标签
-
-    X_tensor = torch.FloatTensor(X)
-    y_tensor = torch.FloatTensor(y)
-
-    if test ==False:
-        X_train, X_val, y_train, y_val = train_test_split(X_tensor, y_tensor, test_size=ratio, random_state=random_state)
-        train_dataset = TensorDataset(X_train, y_train)
-        val_dataset = TensorDataset(X_val, y_val)
-        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=64)
-    else:
-        X_train, X_temp, y_train, y_temp = train_test_split(X_tensor, y_tensor, test_size=0.4, random_state=42)
-        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-        train_dataset = TensorDataset(X_train, y_train)
-        val_dataset = TensorDataset(X_val, y_val)
-        test_dataset = TensorDataset(X_test, y_test)
-        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=64)
-        test_loader = DataLoader(test_dataset, batch_size=64)
-
-    input_size = len(xkeys)  # 除去标签列
-    model = Net(input_size)
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-    best_f1_score = 0.0
-    best_model_state = None
-    for epoch in range(num_epochs):
-        model.train()
-        for batch_X, batch_y in train_loader:
-            optimizer.zero_grad()
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-            loss.backward()
-            optimizer.step()
-
-        model.eval()
-        val_loss = 0.0
-        val_predictions = []
-        val_targets = []
-        with torch.no_grad():
-            for batch_X, batch_y in val_loader:
-                outputs = model(batch_X)
-                val_loss += criterion(outputs, batch_y)
-                val_predictions.extend(outputs.cpu().numpy())
-                val_targets.extend(batch_y.cpu().numpy())
-
-        val_predictions = [1 if pred >= 0.5 else 0 for pred in val_predictions]
-        current_f1_score = f1_score(val_targets, val_predictions)
-
-        print(
-            f'Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}, Val Loss: {val_loss.item()}, F1 Score: {current_f1_score}')
-
-        # 保存表现最好的模型
-        if current_f1_score > best_f1_score:
-            best_f1_score = current_f1_score
-            best_model_state = model.state_dict()
-
-    # 保存分数最高的模型
-    if test==True:
-        test_predictions = []
-        test_targets = []
-        with torch.no_grad():
-            for batch_X, batch_y in test_loader:
-                outputs = model(batch_X)
-                test_predictions.extend(outputs.cpu().numpy())
-                test_targets.extend(batch_y.cpu().numpy())
-
-        test_predictions = [1 if pred >= 0.5 else 0 for pred in test_predictions]
-        test_f1_score = f1_score(test_targets, test_predictions)
-
-        print(f'Final Test F1 Score: {test_f1_score}')
-
-        # 保存分数最高的模型
-        if save_path is None:
-            save_path = check_path("./DN_result")
-
-        torch.save(best_model_state, osp.join(save_path,'best_model.pth'))
-
-        if metrics:
-            conf_matrix = confusion_matrix(test_targets, test_predictions)
-            for i in range(conf_matrix.shape[0]):
-                for j in range(conf_matrix.shape[1]):
-                    plt.text(j, i, str(conf_matrix[i, j]), ha='center', va='center', color='white')
-            plt.title('Confusion Matrix')
-            plt.imshow(conf_matrix, interpolation='nearest', cmap=plt.cm.Blues)
-            plt.title('Confusion Matrix')
-            plt.colorbar()
-            plt.xlabel('Predicted Label')
-            plt.ylabel('True Label')
-            plt.savefig(osp.join(save_path,"confusion_matrix.jpg"))
-
-        if ROC:
-            from sklearn.metrics import roc_curve,auc
-            # 绘制ROC曲线
-            fpr, tpr, thresholds = roc_curve(test_targets, test_predictions)
-            roc_auc = auc(fpr, tpr)
-
-            plt.figure(figsize=(8, 8))
-            plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = {:.2f})'.format(roc_auc))
-            plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-            plt.xlabel('False Positive Rate')
-            plt.ylabel('True Positive Rate')
-            plt.title('Receiver Operating Characteristic (ROC) Curve')
-            plt.legend()
-            plt.savefig(osp.join(save_path,"ROC.jpg"))
-
 def compute_vif(X,export=False):
     from statsmodels.stats.outliers_influence import variance_inflation_factor
     vif_data = pd.DataFrame()
@@ -474,23 +346,443 @@ def baseline_models():
     return [model_1,model_2,model_3]
 
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-class Net(nn.Module):
-    def __init__(self,input_size):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(input_size,64)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(64,1)
-        self.sigmoid = nn.Sigmoid()
+def plot_feature_importance(model, X, feature_names, angle=45):
+    """
+    绘制逻辑回归模型中每个特征的重要性（系数值）的条形图。
 
-    def forward(self,x):
-        x = self.fc1(x)
-        x = self.relu1(x)
-        x = self.fc2(x)
-        x = self.sigmoid(x)
-        return x
+    参数：
+    model : 已训练的逻辑回归模型 (LogisticRegression)
+    X : 训练数据集特征
+    feature_names : 特征名称列表，可选，默认为None，如果为None，则使用默认的X列名
+    angle : 特征名称显示的旋转角度，默认为45度
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from sklearn.pipeline import Pipeline
+
+    # 获取逻辑回归模型的系数
+    if isinstance(model, Pipeline):
+        # 获取Pipeline中最后一步的模型
+        model = model.named_steps['classifier']
+
+    if hasattr(model, 'coef_'):
+        coefficients = model.coef_[0]
+    else:
+        raise AttributeError("The model does not have 'coef_' attribute.")
+
+    # 如果没有提供特征名称，则使用默认的列名
+    if feature_names is None:
+        if isinstance(X, pd.DataFrame):
+            # 移除 'name' 和 'label' 列
+            feature_columns = X.drop(columns=['name', 'label'], errors='ignore')
+            feature_names = feature_columns.columns
+        else:
+            # 如果不是 DataFrame，直接生成特征名
+            feature_names = [f'Feature {i + 1}' for i in range(X.shape[1])]
+
+    # 创建一个DataFrame存储特征名和系数值
+    feature_importance = pd.DataFrame({
+        'Feature': feature_names,
+        'Coefficient': coefficients
+    })
+
+    # 按照系数的绝对值排序特征
+    feature_importance['Abs Coefficient'] = feature_importance['Coefficient'].abs()
+    feature_importance = feature_importance.sort_values('Abs Coefficient', ascending=False)
+
+    # 绘制条形图
+    plt.figure(figsize=(12, 8))
+    y_positions = np.arange(len(feature_importance))
+    plt.barh(y_positions, feature_importance['Coefficient'], color='skyblue')
+    plt.yticks(y_positions, feature_importance['Feature'], rotation=angle, fontsize=10)
+    plt.xlabel('Coefficient Value', fontsize=12)
+    plt.ylabel('Feature', fontsize=12)
+    plt.title('Feature Importance in Logistic Regression', fontsize=14)
+
+    # 添加系数数值到条形图的末端
+    for i, coef in enumerate(feature_importance['Coefficient']):
+        plt.text(coef, i, f'{coef:.3f}', ha='left' if coef > 0 else 'right',
+                 va='center', fontsize=9, color='black')
+
+    plt.tight_layout()
+    plt.gca().invert_yaxis()  # 反转y轴，使重要性高的特征在顶部
+    plt.show()
+
+
+def train_and_save_models(
+        data,
+        db_name=None,
+        label_name= None,
+        k=20,
+        output_file=None,
+        no_train=False,
+        mode=None,
+        test_df =None,
+        CM=False,
+        ROC=False,
+        show_error=False,
+        show_youden=False,
+        focus=None,
+        use_best="No"):
+    # Separate features and labels
+    result_dir = fr"./result/{db_name}_{mode}_{k}_result"
+    if CM or ROC:
+        check_path(result_dir)
+    data = data.fillna(0)
+    X = data.drop(columns=[label_name,"name"])
+    y = data[label_name]
+    print(f"Find {data.shape[1]} number of features in general")
+
+    scaler = StandardScaler()
+    X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
+    if not no_train:
+        if mode=="var":
+            var_thresh = VarianceThreshold(threshold=0.01)
+            X_var = var_thresh.fit_transform(X_scaled)
+            k_best = SelectKBest(score_func=f_classif, k=k)
+            X_top_features = k_best.fit_transform(X_var, y)
+            selected_features_indices = k_best.get_support(indices=True)
+            top_features = X.columns[selected_features_indices]
+            X_top_features = pd.DataFrame(X_top_features, columns=top_features, index=X.index)
+        elif mode=="RF":
+            # Using RF for feature selection
+            rf = RandomForestClassifier(n_estimators=100)
+            rfe = RFE(estimator=rf, n_features_to_select=k, step=1)
+            X_rfe = rfe.fit_transform(X_scaled, y)
+            top_features = X.columns[rfe.get_support()]
+            X_top_features = pd.DataFrame(X_rfe, columns=top_features, index=X.index)
+        elif mode == "LASSO":
+            # Using LASSO for feature selection
+            min, max = -3, 1
+            alphas = np.logspace(min, max, 50)
+            lasso = LassoCV(alphas=alphas, cv=5, max_iter=300000)
+            lasso.fit(X_scaled, y)
+            importance = np.abs(lasso.coef_)
+            top_k_indices = np.argsort(importance)[-k:]
+            top_features = X.columns[top_k_indices]
+            X_top_features = X_scaled[top_features]
+        else:
+            raise KeyError("Error! Mode {} is not available currently".format(mode))
+
+        models = {
+            'Logistic Regression': LogisticRegression(class_weight='balanced', max_iter=10000),
+            'SVM': SVC(probability=True,class_weight='balanced'),
+            'KNN': KNeighborsClassifier(),
+            'Neural Network': MLPClassifier(max_iter=10000),
+            'Random Forest': RandomForestClassifier(),
+            'Decision Tree': DecisionTreeClassifier()
+        }
+
+        # Train and save models
+        trained_models = {}
+        cross_val_results = {}
+        best_thresholds = {}
+        for name, model in models.items():
+            pipeline = Pipeline([
+                ('scaler', StandardScaler()),  # Each model has its own scaler for consistency
+                ('classifier', model)
+            ])
+            cv_scores = cross_val_score(pipeline, X_top_features, y, cv=5, scoring='f1')
+            cross_val_results[name] = cv_scores
+
+            pipeline.fit(X_top_features, y)
+            trained_models[name] = pipeline
+            y_prob = pipeline.predict_proba(X_top_features)[:, 1]
+            fpr, tpr, thresholds = roc_curve(y, y_prob)
+            youden_index = tpr - fpr
+            best_threshold_index = youden_index.argmax()
+            best_threshold = thresholds[best_threshold_index]
+            best_thresholds[name] = best_threshold
+            print(f"{name}: Best Threshold (Youden Index): {best_threshold:.2f}")
+
+        for name, scores in cross_val_results.items():
+            print(f"{name} Cross-Validation AUC: {scores.mean():.2f} ± {scores.std():.2f}")
+
+        if output_file is not None:
+            with open(output_file, 'wb') as f:
+                pickle.dump({
+                    'scaler': scaler,
+                    'top_10_features': top_features,
+                    'models': trained_models,
+                    'best_thresholds' : best_thresholds
+                }, f)
+
+            print(f"Models and scaler saved to {output_file}")
+
+    if test_df is not None:
+        if not isinstance(test_df, pd.DataFrame):
+            raise ValueError("test_df should be a pandas DataFrame")
+
+        if no_train:
+            with open(output_file, 'rb') as f:
+                saved_data = pickle.load(f)
+            top_features = saved_data['top_10_features']
+            scaler = saved_data['scaler']
+            trained_models = saved_data['models']
+            best_thresholds = saved_data['best_thresholds']
+
+        # Standardize test features
+        X_test = test_df.drop(columns=[label_name])
+        if "name" in list(X_test.columns):
+            names = X_test["name"]
+            X_test = X_test.drop(columns=['name'])
+        else:
+            names = None
+
+        X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
+        X_test_scaled = X_test_scaled[top_features]
+        y_test = test_df[label_name]
+
+        predictions = {}
+        metrics = {}
+
+        if CM:
+            if focus is None:
+                fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(18, 10))
+                axes = axes.flatten()
+            else:
+                fig = plt.figure(figsize=(10,8))
+                ax = fig.add_subplot(111)
+
+        if ROC:
+            if not focus:
+                fig_roc, axes_roc = plt.subplots(nrows=2, ncols=3, figsize=(18, 10))
+                axes_roc = axes_roc.flatten()
+                roc_files = []
+            else:
+                fig_roc = plt.figure(figsize=(10,8))
+                axes_roc = fig_roc.add_subplot(111)
+
+        for i, (name, model) in enumerate(trained_models.items()):
+            if show_error:
+                status_dict = {
+                    "name": [],
+                    "status": []
+                }
+                status_map = {0: "TP", 1: "TN", 2: "FP", 3: "FN"}
+
+            y_prob = model.predict_proba(X_test_scaled)[:, 1]
+            if use_best == "no":
+                optimal_threshold = best_thresholds[name]
+            elif use_best == "default":
+                optimal_threshold = 0.5
+            elif use_best == "yes":
+                fpr, tpr, thresholds = roc_curve(y_test, y_prob)
+                specificity = 1 - fpr
+                youden_index = tpr + specificity - 1
+                optimal_idx = np.argmax(youden_index)
+                optimal_threshold = thresholds[optimal_idx]
+
+            y_pred_optimal = (y_prob >= optimal_threshold).astype(int)
+            # y_pred = model.predict(X_test_scaled)
+            predictions[name] = y_pred_optimal
+
+            cm = confusion_matrix(y_test, y_pred_optimal)
+            tn, fp, fn, tp = cm.ravel()
+            cm_reordered = np.array([[tp, fn], [fp, tn]])
+
+            if show_error:
+
+                # Identifying the indices of mispredicted samples
+                mispredicted_indices = y_test.index[y_test != y_pred_optimal]
+                mispredicted_samples = test_df.loc[mispredicted_indices]
+
+                if names is not None:
+                    mispredicted_names = names.loc[mispredicted_indices]
+                else:
+                    mispredicted_names = mispredicted_indices
+
+                # Determine which are FP and FN
+                fp_indices = y_test.index[(y_test == 0) & (y_pred_optimal == 1)]
+                fn_indices = y_test.index[(y_test == 1) & (y_pred_optimal == 0)]
+                tp_indices = y_test.index[(y_test == 1) & (y_pred_optimal == 1)]
+                tn_indices = y_test.index[(y_test == 0) & (y_pred_optimal == 0)]
+
+                if name == "Random Forest":
+                    print("fp_indices : {}\nfn_indices : {}\ntp_indices : {}\ntn_indices : {}".format(len(fp_indices),len(fn_indices),len(tp_indices),len(tn_indices)))
+                fp_names = names.loc[fp_indices] if names is not None else fp_indices
+                fn_names = names.loc[fn_indices] if names is not None else fn_indices
+                tp_names = names.loc[tp_indices] if names is not None else tp_indices
+                tn_names = names.loc[tn_indices] if names is not None else tn_indices
+
+                status_dict["name"].extend(tp_names)
+                status_dict["status"].extend([0] * len(tp_names))
+
+                status_dict["name"].extend(tn_names)
+                status_dict["status"].extend([1] * len(tn_names))  # TN
+
+                status_dict["name"].extend(fp_names)
+                status_dict["status"].extend([2] * len(fp_names))  # FP
+
+                status_dict["name"].extend(fn_names)
+                status_dict["status"].extend([3] * len(fn_names))  # FN
+                status_df = pd.DataFrame(status_dict)
+                status_df["status"] = status_df["status"].map(status_map)
+
+                status_df.to_csv(osp.join(result_dir, f"{name}_pred_status.csv"),index=None)
+                # Display the results in a more readable format
+                print(f"\n{'=' * 40}")
+                print(f"Model: {name}")
+                print(f"{'=' * 40}")
+                print(f"Total Mispredicted Samples: {len(mispredicted_indices)}")
+                print(f"False Positives (FP): {len(fp_indices)}")
+                print(f"False Negatives (FN): {len(fn_indices)}")
+
+                print("\nFalse Positives (FP) Samples:")
+                print(fp_names.to_list())
+
+                print("\nFalse Negatives (FN) Samples:")
+                print(fn_names.to_list())
+
+                print("\nTrue Positives (TP) Samples:")
+                print(tp_names.to_list())
+
+                print("\nTrue Negatives (TN) Samples:")
+                print(tn_names.to_list())
+                print(f"{'=' * 40}\n")
+
+            if CM:
+                if focus is None:
+                    ax = axes[i]
+                    cax = ax.matshow(cm_reordered, cmap='Blues')
+                    fig.colorbar(cax, ax=ax)
+                    ax.set_title(f'Confusion Matrix for {name}')
+                    ax.set_xlabel('Predicted')
+                    ax.set_ylabel('Actual')
+                    ax.set_xticks([0, 1])
+                    ax.set_yticks([0, 1])
+                    ax.set_xticklabels(['Positive', 'Negative'])
+                    ax.set_yticklabels(['Positive', 'Negative'])
+                    for (j, k), val in np.ndenumerate(cm_reordered):
+                        ax.text(k, j, f'{val}', ha='center', va='center',
+                                color='white' if val > cm_reordered.max() / 2 else 'black')
+                elif focus == name:
+                    cax = ax.matshow(cm_reordered, cmap='Blues')
+                    fig.colorbar(cax, ax=ax)
+                    ax.set_title(f'Confusion Matrix for {name}')
+                    ax.set_xlabel('Predicted')
+                    ax.set_ylabel('Actual')
+                    ax.set_xticks([0, 1])
+                    ax.set_yticks([0, 1])
+                    ax.set_xticklabels(['Positive', 'Negative'])
+                    ax.set_yticklabels(['Positive', 'Negative'])
+                    for (j, k), val in np.ndenumerate(cm_reordered):
+                        ax.text(k, j, f'{val}', ha='center', va='center',
+                                color='white' if val > cm_reordered.max() / 2 else 'black')
+
+
+            if ROC:
+                default_threshold = 0.5
+                y_prob = model.predict_proba(X_test_scaled)[:, 1]
+                fpr, tpr, thresholds = roc_curve(y_test, y_prob)
+                roc_auc = auc(fpr, tpr)
+
+                specificity = 1 - fpr
+                youden_index = tpr + specificity - 1
+                optimal_idx = np.argmax(youden_index)
+                optimal_threshold_valid = thresholds[optimal_idx]
+                valid_point = (fpr[optimal_idx], tpr[optimal_idx])
+
+                default_threshold = 0.5
+                train_idx = np.argmin(np.abs(thresholds - default_threshold))
+                train_point = (fpr[train_idx], tpr[train_idx])
+
+                metrics[name] = {
+                    "Optimal threshold (validation)": optimal_threshold_valid,
+                    "Optimal threshold (training)": default_threshold,
+                    "Youden's index": optimal_idx,
+                    'Sensitivity': tpr[optimal_idx],
+                    'Specificity': specificity[optimal_idx],
+                    "AUC" : roc_auc
+                }
+
+                if focus is None:
+                    ax = axes_roc[i]
+                    ax.plot(fpr, tpr, color='darkorange', lw=2, label=f'{name} (area = {roc_auc:.2f})')
+                    ax.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+
+                    if train_point is not None:
+                        if show_youden:
+                            ax.scatter(*train_point, color='red', label=f'Default Youden Index', zorder=5)
+                            ax.annotate(
+                                f'Default\n({train_point[0]:.2f}, {train_point[1]:.2f})',
+                                xy=train_point,
+                                xytext=(-50, 30),
+                                textcoords='offset points',
+                                arrowprops=dict(arrowstyle="->", lw=1.5, color='red'),
+                                color='red'
+                            )
+                            ax.scatter(*valid_point, color='blue', label=f'Validation Youden Index', zorder=5)
+                            ax.annotate(
+                                f'Validation\n({valid_point[0]:.2f}, {valid_point[1]:.2f})',
+                                xy=valid_point,
+                                xytext=(-50, -40),
+                                textcoords='offset points',
+                                arrowprops=dict(arrowstyle="->", lw=1.5, color='blue'),
+                                color='blue'
+                            )
+
+                    # 设置图形属性
+                    ax.set_xlim([0.0, 1.0])
+                    ax.set_ylim([0.0, 1.05])
+                    ax.set_xlabel('False Positive Rate')
+                    ax.set_ylabel('True Positive Rate')
+                    ax.set_title(f'ROC Curve for {name}')
+                    ax.legend(loc='lower right')
+
+                elif focus == name:
+                    axes_roc.plot(fpr, tpr, color='darkorange', lw=2, label=f'{name} (area = {roc_auc:.2f})')
+                    axes_roc.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+
+                    if train_point is not None:
+                        if show_youden:
+                            axes_roc.scatter(*train_point, color='red', label=f'Default Youden Index', zorder=5)
+                            axes_roc.annotate(
+                                f'Default\n({train_point[0]:.2f}, {train_point[1]:.2f})',
+                                xy=train_point,
+                                xytext=(-50, 30),
+                                textcoords='offset points',
+                                arrowprops=dict(arrowstyle="->", lw=1.5, color='red'),
+                                color='red'
+                            )
+                            axes_roc.scatter(*valid_point, color='blue', label=f'Validation Youden Index', zorder=5)
+                            axes_roc.annotate(
+                                f'Validation\n({valid_point[0]:.2f}, {valid_point[1]:.2f})',
+                                xy=valid_point,
+                                xytext=(-50, -40),
+                                textcoords='offset points',
+                                arrowprops=dict(arrowstyle="->", lw=1.5, color='blue'),
+                                color='blue'
+                            )
+
+                    # 设置图形属性
+                    axes_roc.set_xlim([0.0, 1.0])
+                    axes_roc.set_ylim([0.0, 1.05])
+                    axes_roc.set_xlabel('False Positive Rate')
+                    axes_roc.set_ylabel('True Positive Rate')
+                    axes_roc.set_title(f'ROC Curve for {name}')
+                    axes_roc.legend(loc='lower right')
+
+                    # 保存图像
+
+        if CM:
+            plt.tight_layout()
+            plt.savefig(osp.join(result_dir,"CM.jpg"))
+            plt.close()
+
+        if ROC:
+            plt.tight_layout()
+            plt.savefig(osp.join(result_dir,"ROC.jpg"))
+            plt.close()
+
+        if metrics:
+            metrics = pd.DataFrame(metrics).T
+            metrics.to_csv(osp.join(result_dir,"metrics.csv"))
+
+        if test_df is None:
+            return predictions, None
+        else:
+            return predictions, metrics
 
 

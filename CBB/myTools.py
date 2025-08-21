@@ -110,6 +110,15 @@ def read_data(path):
         print(f"Error reading image file {path}: {e}")
         return None
 
+def read_sitk_data(path):
+    import SimpleITK as sitk
+    is_Exist(path)
+    try:
+        image = sitk.ReadImage(path)
+        return image
+    except Exception as e:
+        print(f"Error reading image file {path}: {e}")
+        return None
 def save_data(image_array, path, reference_image_path):
     try:
         is_Exist(reference_image_path)
@@ -187,18 +196,12 @@ def add_label(label_file,feature_file):
     save_path = osp.join(osp.dirname(feature_file), save_file)
     general_features.to_csv(save_path, index=None)
 
-
-def compare_mask(mask1, mask2):
-
-    mask1 = mask1>0
-    mask2 = mask2>0
-
 def load_yaml_file(yaml_file):
     import yaml
     is_Exist(yaml_file)
 
     f = open(yaml_file)
-    data = yaml.load(f)
+    data = yaml.safe_load(f)
 
     return data
 
