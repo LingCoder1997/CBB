@@ -24,7 +24,7 @@ def generate_RELF():
 
 
 @timer
-def feature_extraction(data_path,mask_path, param = r"D:\Pycharm_workplace\COVID19\param\Params.yaml"):
+def feature_extraction(data_path,mask_path, param = r"..\param\Params.yaml"):
     from radiomics import featureextractor
     image = sitk.ReadImage(data_path)
     mask = sitk.ReadImage(mask_path)

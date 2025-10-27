@@ -1,14 +1,17 @@
-Metadata-Version: 1.2
+Metadata-Version: 2.4
 Name: CBB
 Version: 1.0
 Summary: This is a simple version of the common block lib 
 Home-page: https://github.com/your_username/myhello
 Author: Lingxuan_Wang
 Author-email: lingxuanwang123@163.com
-License: UNKNOWN
-Description: UNKNOWN
-Platform: UNKNOWN
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.6
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: requires-python
+Dynamic: summary

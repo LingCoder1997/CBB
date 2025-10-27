@@ -4,6 +4,7 @@ CBB/cfg.py
 CBB/data_type.py
 CBB/errors.py
 CBB/myCV.py
+CBB/myDL.py
 CBB/myDecorator.py
 CBB/myDicom.py
 CBB/myExtractor.py
@@ -11,6 +12,7 @@ CBB/myGeometry.py
 CBB/myHash.py
 CBB/myML.py
 CBB/myMetrics.py
+CBB/myRadiomic_func.py
 CBB/myRadiomics.py
 CBB/myTools.py
 CBB/mydb.py
