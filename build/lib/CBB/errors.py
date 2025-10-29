@@ -9,7 +9,13 @@
 @Description  : This flie contains the Customized Errors that can be used for try/raise
 '''
 
+class StringfyColumnFailed(Exception):
+    def __init__(self, message):
+        super().__init__(self)
+        self.message = message
 
+    def __str__(self):
+        return self.message
 class UnSupportUnitError(Exception):
     def __init__(self, message):
         super().__init__(self)
@@ -110,6 +116,14 @@ class DataConvertionFailError(Exception):
         return self.message
 
 class PathNotFoundError(Exception):
+    def __init__(self, message):
+        super().__init__(self)
+        self.message = message
+
+    def __str__(self):
+        return self.message
+    
+class MaskImageIncompatibleError(Exception):
     def __init__(self, message):
         super().__init__(self)
         self.message = message
