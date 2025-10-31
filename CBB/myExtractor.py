@@ -1,6 +1,7 @@
 import sklearn.linear_model
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LassoCV
+from sklearn.feature_selection import VarianceThreshold
 import SimpleITK as sitk
 import numpy as np
 import os
@@ -21,6 +22,26 @@ def generate_LASSO(min=-3, max=1):
 def generate_RELF():
     from skrebate import ReliefF
     return ReliefF()
+
+def remove_constant_features(df, threshold=1e-4):
+    from sklearn.feature_selection import VarianceThreshold
+
+    selector = VarianceThreshold(threshold=threshold)
+    X_filtered = selector.fit_transform(df)
+    print("feature reduced from {} to {}".format(df.shape[1],X_filtered.shape[1]))
+    selected_columns = df.columns[selector.get_support()]
+    new_df = df[selected_columns]
+    return new_df
+
+def remove_redundant_features(df, threshold=0.9):
+    corr_matrix = df.corr().abs()
+    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    to_drop = [column for column in upper_tri.columns if any(upper_tri[column]>0.9)]
+    print("{} high correlated features will be dropped".format(len(to_drop)))
+    print("{} number of features left for further analysis".format(df.shape[1]-len(to_drop)))
+
+    X_filtered = df.drop(columns=to_drop)
+    return X_filtered
 
 
 @timer
