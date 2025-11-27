@@ -670,5 +670,3 @@ def draw_waterfall(df,save_path=None):
     plt.savefig(save_path)
 
 
-
-
