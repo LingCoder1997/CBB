@@ -779,6 +779,90 @@ def feature_prediction(data,ykey,FS_mode="LASSO",classifier="SVM",mode="top-5",a
         save_path = check_path("./Specificity_plot")
         plt.savefig(osp.join(save_path, f"Specificity_CrossTable_{mode}_{cv_mode}.jpg"))
 
+
+def plot_radiomics_feature_heatmap(image, mask, feature_map, name=None, save_path=None):
+    import SimpleITK as sitk
+    from scipy import ndimage as nd
+    from CBB.myos import ifs_Exist
+    if not isinstance(image, sitk.Image):
+        raise TypeError("Error! The given image is not a SimpleITK image object.")
+    if not isinstance(mask, sitk.Image):
+        raise TypeError("Error! The given mask is not a SimpleITK image object.")
+
+    # Check if the image and mask is consistent
+    if not sitk.CheckImageGeometry(image, mask):
+        raise ValueError("Error! The image and mask do not have the same geometry.")
+    
+    if sitk.CheckImageGeometry(image, feature_map):
+        print("Warninig! please recheck the feature map, it has the same geometry as the image.")
+
+    image_np = sitk.GetArrayFromImage(image)
+    mask_np = sitk.GetArrayFromImage(mask).astype(bool)
+    print("image_np shape (z,y,x):", image_np.shape)
+    print("mask_np shape  (z,y,x):", mask_np.shape)
+    z_sums = mask_np.sum(axis=(1, 2))
+    z_idx = int(z_sums.argmax())
+    print("Chosen slice index (axis 0 = z):", z_idx)
+
+    img_slice = image_np[z_idx]
+    mask_slice = mask_np[z_idx]
+
+    try:
+        feature_image = sitk.Resample(
+            feature_map,
+            image,
+            sitk.Transform(),
+            sitk.sitkNearestNeighbor,
+            np.nan,
+            feature_map.GetPixelID(),
+        )
+    except Exception as e:
+        raise RuntimeError(f"Error during resampling feature map: {e}")
+    
+    try:
+        feature_np = sitk.GetArrayFromImage(feature_image)
+        feat_slice = feature_np[z_idx, :, :]
+        img_slice  = image_np[z_idx, :, :]
+        mask_slice = mask_np[z_idx, :, :]
+        valid_mask = mask_slice & ~np.isnan(feat_slice)
+        if not np.any(valid_mask):
+            raise RuntimeError("No valid feature voxels in this slice.")
+        
+        feat_vals = feat_slice[valid_mask]
+        img_p1, img_p99 = np.percentile(img_slice, (1, 99))
+        img_norm = np.clip((img_slice - img_p1) / (img_p99 - img_p1 + 1e-8), 0, 1)
+        f_p5, f_p95 = np.percentile(feat_vals, (5, 95))
+        feat_norm = (feat_slice - f_p5) / (f_p95 - f_p5 + 1e-8)
+        feat_norm = np.clip(feat_norm, 0, 1)
+
+        feat_norm_masked = np.where(valid_mask, feat_norm, np.nan)
+        feat_inside = feat_norm.copy()
+        feat_inside[np.isnan(feat_inside)] = 0
+
+        feat_smooth = nd.gaussian_filter(feat_inside, sigma=0.7)
+        feat_smooth_masked = np.where(mask_slice, feat_smooth, np.nan)
+
+        plt.figure(figsize=(6, 6))
+        plt.imshow(img_norm, cmap="gray")
+        im = plt.imshow(feat_smooth_masked, cmap="jet", alpha=0.8, interpolation='bicubic')
+        plt.colorbar(im, fraction=0.046, pad=0.04, label="Normalized feature value")
+        plt.title(f"Case 0283899 - slice {z_idx}\nwavelet-LHL_glszm_GrayLevelNonUniformity")
+        plt.axis("off")
+        plt.tight_layout()
+        if not save_path:
+            save_dir = check_path(r"./Feature_heatmap")
+            if name:
+                save_path = osp.join(save_dir, f"{name}_feature_heatmap.jpg")
+            else:
+                save_path = osp.join(save_dir, f"feature_heatmap.jpg")
+        plt.savefig(save_path)
+    except Exception as e:
+        raise RuntimeError(f"Error during feature heatmap plotting: {e}")
+    
+
+    
+    
+
 if __name__ == '__main__':
     mask_dir = r"D:\Pycharm_workplace\COVID19\COVID_DATA\mask"
     dicom_dir =r"D:\Pycharm_workplace\COVID19\COVID_DATA\new_dcm"

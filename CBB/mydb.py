@@ -103,7 +103,16 @@ def normalize_and_melt(df, id_vars=['label'], value_vars=None, var_name='variabl
         melted_df.to_csv(save_path,index=None)
     return melted_df
 
-
+# Check the type of the column
+def column_type_check(df, col):
+    if col not in df.columns:
+        raise KeyError(f"Error! The given column name '{col}' is not found in the DataFrame.")
+    if is_cate(df[col]):
+        return "categorical"
+    elif pd.api.types.is_numeric_dtype(df[col]):
+        return "numerical"
+    else:
+        raise TypeError(f"Error! The column '{col}' is neither categorical nor numerical.")
 
 
 if __name__ == '__main__':

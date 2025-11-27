@@ -21,7 +21,7 @@ from scipy.interpolate import UnivariateSpline
 from CBB.cfg import *
 from CBB.cfg import _reset_figure
 
-from CBB.data_type import is_cate, round_down_to_nearest_half, round_up_to_nearest_half
+from CBB.data_type import is_cate, round_down_to_nearest_half, round_up_to_nearest_half, variable_type
 from CBB.myMetrics import Cal_CI, Cal_IQR, KsNormDetect
 from CBB.mydb import if_Nan_Exists, remove_nan
 from CBB.myos import auto_save_file, check_path, get_file_name
@@ -90,6 +90,14 @@ def forest_plot(data,xkeys,ykey,cate_keys=None,order=None, save_path=None,verbos
     
     if cate_keys is not None:
         assert not ykey[0] in cate_keys,"Error! The cate_keys should not contain ykey"
+    else:
+        cate_keys = []
+        for col in xkeys:
+            if variable_type(data[col]) == "Cat":
+                cate_keys.append(col)
+            else:
+                continue
+        print("The cate_key is not given, auto-pred the cate-keys as below: \n{}".format(cate_keys))
     if len(set(cate_keys).difference(set(xkeys))) != 0:
         raise ValueError("The given cate_keys contains other keys {} that is not included by xkeys!".format(set(cate_keys).difference(set(xkeys))))
 
@@ -644,4 +652,21 @@ def plot_line_graph(data, xkey, ykey, smoothness=0, axe=None):
     axe.set_title('Smooth Line Plot')
 
     return axe
+
+def draw_waterfall(df,save_path=None):
+    assert "y_true" in list(df.columns) and "Rad_score" in list(df.columns),"Error! CANNOT find the name and label list from the dataframe"
+    plt.figure(figsize=(10, 6), dpi=300)
+    colors = df['y_true'].map({1: 'red', 0: 'blue'})
+    plt.bar(range(len(df)), df['Rad_score'], color=colors, edgecolor='black', width=0.8)
+    plt.axhline(0, color='green', linestyle='--', linewidth=2, label='Threshold')
+    plt.legend(['Threshold (0)', 'Positive (1)', 'Negative (0)'], loc='upper right', fontsize=12)
+    plt.title('Rad-score Waterfall Plot', fontsize=16)
+    plt.xlabel('Sample Index (sorted by Rad-score)', fontsize=12)
+    plt.ylabel('Rad-score', fontsize=12)
+    plt.grid(alpha=0.3)
+    if save_path is None:
+        save_dir = check_path(r"./plots")
+        save_path = osp.join(save_dir,"./waterfall.jpg")
+    plt.savefig(save_path)
+
 

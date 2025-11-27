@@ -1,28 +1,27 @@
-import joblib
 import radiomics
 import os.path as osp
 import os
 import sys
 import numpy as np
 import pandas as pd
+
 from matplotlib import pyplot as plt
 from scipy.stats import levene, ttest_ind
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
-from sklearn.linear_model import LassoCV, LogisticRegression
+from sklearn.linear_model import LassoCV
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split, LeaveOneOut, GridSearchCV, cross_val_predict
-from sklearn.naive_bayes import GaussianNB
+from sklearn.model_selection import train_test_split, LeaveOneOut, cross_val_predict
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
-from skrebate import ReliefF
+from sklearn.neural_network import MLPClassifier
 
-from CBB.myML import compute_vif, LR_param_grid_L1
+from CBB.myML import compute_vif
 from CBB.myTools import consist_check
 from CBB.myos import find_sample_files, is_Exist, check_path
-import SimpleITK as sitk
-from radiomics import featureextractor
+from CBB.myExtractor import feature_extraction
 
 def bootstrap_CI(data, num_samples=1000, alpha=0.95):
     from sklearn.utils import resample
@@ -37,45 +36,6 @@ def bootstrap_CI(data, num_samples=1000, alpha=0.95):
     lower_bound = np.percentile(means, lower_percentile)
     upper_bound = np.percentile(means, upper_percentile)
     return lower_bound, upper_bound
-
-def feature_extraction(data_path,mask_path, param = r"D:\Pycharm_workplace\COVID19\param\Params.yaml"):
-
-    image = sitk.ReadImage(data_path)
-    mask = sitk.ReadImage(mask_path)
-    if sitk.GetArrayViewFromImage(mask).max() > 1:
-        print("Warning! Get the mask file in 0/255 Format, rescale the pixel values")
-        mask = mask//255
-
-    image_spacing = image.GetSpacing()
-    mask_spacing = mask.GetSpacing()
-    if not image_spacing == mask_spacing:
-        print("Warning! Spacing inconsistent image spacing: {}; mask spacing: {}".format(image_spacing, mask_spacing))
-    extractor = featureextractor.RadiomicsFeatureExtractor(param)
-    feature_vector = extractor.execute(image, mask)
-    return feature_vector
-
-def generate_classifier(classifier,random_state=None):
-    if classifier == "NN":
-        model = MLPClassifier(max_iter=10000)
-    elif classifier == "DT":
-        model = DecisionTreeClassifier()
-    elif classifier == "AD":
-        model = AdaBoostClassifier()
-    elif classifier == "RF":
-        model = RandomForestClassifier()
-    elif classifier == "NY":
-        model = GaussianNB()
-    elif classifier == "LR":
-        model = LogisticRegression(class_weight="balanced")
-    elif classifier == "SVM":
-        from sklearn.svm import SVC
-        model = SVC(probability=True)
-    elif classifier == "KNN":
-        model = KNeighborsClassifier()
-    else:
-        raise KeyError(f"Error! The given key {classifier} is not recognized!")
-
-    return model
 class FeatureSelector:
     def __init__(self, name="Default", top_N=10, dul_check=False, **kwargs):
         self.name = name
@@ -147,7 +107,7 @@ class LASSOSelector(FeatureSelector):
 
         return feature_dict, unique_features
 
-def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
+def select_features(X, y, FS_mode, mode="top-5", **kwargs):
     assert FS_mode in ['LASSO', 'TTS', 'RELF', 'GNRO', 'FAOV',
                        'FSCR'], "Error! The given key: {} is not supported currently".format(FS_mode)
     assert mode in ['top-5', 'top-10', 'top-5%'], "Error! The given mode {} is not currently not supported".format(mode)
@@ -173,7 +133,6 @@ def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
         if dul_check:
             feature_dict, selected_features = find_unique_top_N(coef_list=coef_abs, column_names=features,
                                                                 max_num=num_features)
-            feature_dict = dict(feature_dict)
         else:
             feature_ranking = feature_ranking[:num_features]
             selected_features = X.columns[feature_ranking]
@@ -223,12 +182,10 @@ def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
     elif FS_mode == "RELF":
         from skrebate import ReliefF
         from sklearn.feature_selection import SelectKBest
-        X = X.reset_index(drop=True)
-        y = y.reset_index(drop=True)
         relief = ReliefF()
         features = X.columns
         # Fit ReliefF to the data
-        relief.fit(X.values, y.values)
+        relief.fit(X.values, y)
 
         # Get feature scores
         feature_scores = relief.feature_importances_
@@ -309,8 +266,8 @@ def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
         X_scaled = pd.DataFrame(X_scaled, columns=features)
 
         fisher_scores, p_values = chi2(X_scaled, y)
-        significant_fisher_scores = fisher_scores[p_values < 0.1]
-        significant_indices = np.where(p_values < 0.1)[0]
+        significant_fisher_scores = fisher_scores[p_values < 0.05]
+        significant_indices = np.where(p_values < 0.05)[0]
         select_features = features[significant_indices]
         if dul_check:
             feature_info, selected_features = find_unique_top_N(
@@ -324,8 +281,6 @@ def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
             selected_features = X.columns[selected_feature_indices]
             selected_scores = fisher_scores[selected_feature_indices]
             feature_info = dict(zip(selected_features, selected_scores))
-        print(f"F-ANOVA extracted {len(selected_features)} features")
-        print(selected_features)
         if export_feature:
             return selected_features, feature_info
         else:
@@ -333,41 +288,41 @@ def extract_features(X, y, FS_mode, mode="top-5", **kwargs):
     else:
         raise KeyError("Error! The given key {} was not included in current version".format(FS_mode))
 
-# def extract_features(dicom_dir, mask_dir, label_file, save_path=None):
-#     valid_samples, temp_db = consist_check(dicom_dir, mask_dir, label_file)
-#     print(valid_samples)
-#
-#     total_db = None
-#     success, fail = 0, 0
-#     for dcm in valid_samples:
-#         matched_dicom = find_sample_files(dicom_dir,dcm)
-#         matched_mask = find_sample_files(mask_dir,dcm)
-#         assert len(matched_mask)==1 and len(matched_dicom)==1, f"Error! sample {dcm} has some problem"
-#
-#         dicom_path,mask_path = osp.join(dicom_dir,matched_dicom[0]), osp.join(mask_dir, matched_mask[0])
-#         try:
-#             is_Exist(dicom_path)
-#             is_Exist(mask_path)
-#             print(f"Proessing file {dcm} ...")
-#             features = feature_extraction(data_path=dicom_path,mask_path=mask_path)
-#         except:
-#             print("Feature extraction failed at {}".format(id))
-#             fail += 1
-#             continue
-#         df = pd.DataFrame(features.values(), index=features.keys()).transpose()
-#         df['name'] = dcm
-#         total_db = df if total_db is None else pd.concat([total_db, df])
-#         success += 1
-#
-#     total_db = pd.merge(left=temp_db, right=total_db, on="name", how="inner")
-#     if save_path is not None:
-#         total_db.to_csv(save_path,index=None)
-#     else:
-#         save_path = check_path(r"./Extracted_features")
-#         save_path = osp.join(save_path, "auto.csv")
-#         total_db.to_csv(save_path,index=None)
-#         print(f"Feature file saved into {save_path}")
-#     print("Feature extraction finished!")
+def extract_features(dicom_dir, mask_dir, label_file, save_path=None):
+    valid_samples, temp_db = consist_check(dicom_dir, mask_dir, label_file)
+    print(valid_samples)
+
+    total_db = None
+    success, fail = 0, 0
+    for dcm in valid_samples:
+        matched_dicom = find_sample_files(dicom_dir,dcm)
+        matched_mask = find_sample_files(mask_dir,dcm)
+        assert len(matched_mask)==1 and len(matched_dicom)==1, f"Error! sample {dcm} has some problem"
+
+        dicom_path,mask_path = osp.join(dicom_dir,matched_dicom[0]), osp.join(mask_dir, matched_mask[0])
+        try:
+            is_Exist(dicom_path)
+            is_Exist(mask_path)
+            print(f"Proessing file {dcm} ...")
+            features = feature_extraction(data_path=dicom_path,mask_path=mask_path)
+        except:
+            print("Feature extraction failed at {}".format(id))
+            fail += 1
+            continue
+        df = pd.DataFrame(features.values(), index=features.keys()).transpose()
+        df['name'] = dcm
+        total_db = df if total_db is None else pd.concat([total_db, df])
+        success += 1
+
+    total_db = pd.merge(left=temp_db, right=total_db, on="name", how="inner")
+    if save_path is not None:
+        total_db.to_csv(save_path,index=None)
+    else:
+        save_path = check_path(r"./Extracted_features")
+        save_path = osp.join(save_path, "auto.csv")
+        total_db.to_csv(save_path,index=None)
+        print(f"Feature file saved into {save_path}")
+    print("Feature extraction finished!")
 
 def selected_features_number(overall_features, mode):
     if mode == "top-5":
@@ -415,35 +370,212 @@ def filter_unique_names(feature_list,N):
 
     return selected_features,selected_names
 
-def Corr_filer(feature_matrix : pd.DataFrame, threshold=.9):
-    if 'label' in list(feature_matrix.columns):
-        feature_matrix = feature_matrix.drop('label')
-    correlation_matrix = feature_matrix.corr()
+def generate_classifier(classifier,random_state=None):
+    if classifier == "NN":
+        model = MLPClassifier(max_iter=10000)
+    elif classifier == "DT":
+        model = DecisionTreeClassifier()
+    elif classifier == "AD":
+        model = AdaBoostClassifier()
+    elif classifier == "RF":
+        model = RandomForestClassifier()
+    elif classifier == "NY":
+        model = GaussianNB()
+    elif classifier == "LR":
+        model = LogisticRegression(class_weight="balanced")
+    elif classifier == "SVM":
+        from sklearn.svm import SVC
+        model = SVC(probability=True)
+    elif classifier == "KNN":
+        model = KNeighborsClassifier()
+    else:
+        raise KeyError(f"Error! The given key {classifier} is not recognized!")
 
-    upper = correlation_matrix.where(
-        np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
-    )
+    return model
 
-    to_drop = [column for column in upper.columns if any(upper[column].abs() > threshold)]
 
-    reduced_data = feature_matrix.drop(columns=to_drop)
+def select_features(X, y, FS_mode, mode="top-5", **kwargs):
+    assert FS_mode in ['LASSO', 'TTS', 'RELF', 'GNRO', 'FAOV',
+                       'FSCR'], "Error! The given key: {} is not supported currently".format(FS_mode)
+    assert mode in ['top-5', 'top-10', 'top-5%'], "Error! The given mode {} is not currently not supported".format(mode)
+    export_feature = kwargs.get("show_features", False)
+    dul_check = kwargs.get("dul_check", False)
 
-    print("Original features: {}; After filtering: {}".format(len(feature_matrix.columns), len(reduced_data.columns)))
+    if FS_mode == "LASSO":
+        min, max = kwargs.get('min', -3), kwargs.get('max', 1)
+        cv = kwargs.get("cv", 5)
+        alphas = np.logspace(min, max, 50)
+        model = LassoCV(alphas=alphas, cv=cv, max_iter=300000).fit(X, y)
+        print("LASSO alpha = {}".format(model.alpha_))
 
-    return reduced_data
+        selected_features = X.columns[model.coef_ != 0]
+        if len(selected_features) <= 3:
+            print(f"Warning! The LASSO extracted features number {len(selected_features)} is below 3")
+        coef_abs = np.abs(model.coef_)
+        feature_ranking = np.argsort(coef_abs)[::-1]
+        features = X.columns
+        num_features = selected_features_number(features, mode) if len(selected_features) > 3 else len(
+            selected_features)
 
-def feature_prediction(
-        data,
-        ykey,
-        FS_mode="LASSO",
-        classifier="SVM",
-        mode="top-5",
-        all=False,
-        how="cv",
-        loo=False,
-        show_features=False,
-        save_model=False,
-        **kwargs):
+        if dul_check:
+            feature_dict, selected_features = find_unique_top_N(coef_list=coef_abs, column_names=features,
+                                                                max_num=num_features)
+        else:
+            feature_ranking = feature_ranking[:num_features]
+            selected_features = X.columns[feature_ranking]
+            feature_dict = dict(zip(X.columns[feature_ranking], model.coef_[feature_ranking]))
+
+        for name, coef in feature_dict.items():
+            print(f"{name}, coef: {coef}")
+        if export_feature:
+            return selected_features, feature_dict
+        else:
+            return selected_features
+
+    elif FS_mode == "TTS":
+        selected_features = {}
+        features = X.columns
+        for feature in features:
+            group1 = X[y == 0][feature]
+            group2 = X[y == 1][feature]
+
+            levene_test = levene(group1, group2)
+            if levene_test.pvalue < 0.05:
+                t_stat, p_value = ttest_ind(group1, group2, equal_var=False)
+            else:
+                t_stat, p_value = ttest_ind(group1, group2)
+            if p_value < 0.05:
+                selected_features[feature] = p_value
+
+        selected_features = dict(sorted(selected_features.items(), key=lambda x: x[1], reverse=False))
+        num_features_selected = len(selected_features)
+
+        if num_features_selected <= 3:
+            print(f"Warning! The T-test selected features number is {num_features_selected} below 3")
+
+        num_features = selected_features_number(features, mode) if num_features_selected > 3 else num_features_selected
+        if export_feature:
+            if dul_check:
+                feature_info, selected_features = find_unique_top_N(
+                    coef_list=selected_features.values(),
+                    column_names=selected_features.keys(),
+                    max_num=num_features, reverse=False)
+            else:
+                feature_info = {k: selected_features[k] for k in list(selected_features)[:num_features]}
+            return pd.Index(selected_features), feature_info
+        else:
+            return pd.Index(selected_features)
+
+    elif FS_mode == "RELF":
+        from skrebate import ReliefF
+        from sklearn.feature_selection import SelectKBest
+        relief = ReliefF()
+        features = X.columns
+        # Fit ReliefF to the data
+        relief.fit(X.values, y)
+
+        # Get feature scores
+        feature_scores = relief.feature_importances_
+
+        # Select the top features based on their scores
+        num_selected_features = selected_features_number(features, mode)
+
+        if dul_check:
+            feature_dict, selected_features = find_unique_top_N(
+                coef_list=feature_scores,
+                column_names=features,
+                max_num=num_selected_features)
+        else:
+            selected_feature_indices = np.argsort(feature_scores)[::-1][:num_selected_features]
+            selected_features = X.columns[selected_feature_indices]
+            feature_dict = {X.columns[idx]: feature_scores[idx] for idx in selected_feature_indices}
+
+        print(f"RELIEF extracted {len(selected_features)} features")
+        print(selected_features)
+        if export_feature:
+            return selected_features, feature_dict
+        else:
+            return selected_features
+
+    # elif FS_mode == "GNRO":
+    #     from sklearn.feature_selection import mutual_info_classif
+    #     features = X.columns
+    #     feature_scores = mutual_info_classif(X, y)
+    #     k = selected_features_number(features, mode)
+    #     if dul_check:
+    #         feature_info, selected_features = find_unique_top_N(
+    #             coef_list=feature_scores,
+    #             column_names=features,
+    #             max_num=k)
+    #     else:
+    #         selected_feature_indices = np.argsort(feature_scores)[::-1][:k]
+    #         selected_features = X.columns[selected_feature_indices]
+    #         feature_info = {features[idx]: feature_scores[idx] for idx in selected_feature_indices}
+    #     print(f"GNRO extracted {len(selected_features)} features")
+    #     print(selected_features)
+    #
+    #     if export_feature:
+    #         return selected_features, feature_info
+    #     else:
+    #         return selected_features
+    elif FS_mode == "FAOV":
+        from sklearn.feature_selection import SelectKBest, f_classif
+        features = X.columns
+        k = selected_features_number(features, mode)
+        selector = SelectKBest(score_func=f_classif, k=k)
+        selector.fit(X, y)
+        feature_scores = selector.scores_
+
+        if dul_check:
+            feature_info, selected_features = find_unique_top_N(
+                coef_list=feature_scores,
+                column_names=features,
+                max_num=k)
+        else:
+            selected_feature_indices = selector.get_support(indices=True)
+            selected_features = X.columns[selected_feature_indices]
+            feature_info = dict(zip(selected_features, feature_scores[selected_feature_indices]))
+        print(f"F-ANOVA extracted {len(selected_features)} features")
+        print(selected_features)
+
+        if export_feature:
+            return selected_features, feature_info
+        else:
+            return selected_features
+
+    elif FS_mode == "FSCR":
+        from sklearn.preprocessing import MinMaxScaler
+        from sklearn.feature_selection import chi2
+        features = X.columns
+        k = selected_features_number(features, mode)
+        MM_scaler = MinMaxScaler()
+        X_scaled = MM_scaler.fit_transform(X)
+        X_scaled = pd.DataFrame(X_scaled, columns=features)
+
+        fisher_scores, p_values = chi2(X_scaled, y)
+        significant_fisher_scores = fisher_scores[p_values < 0.05]
+        significant_indices = np.where(p_values < 0.05)[0]
+        select_features = features[significant_indices]
+        if dul_check:
+            feature_info, selected_features = find_unique_top_N(
+                coef_list=significant_fisher_scores,
+                column_names=select_features,
+                max_num=k)
+        else:
+            sorted_indices = np.argsort(significant_fisher_scores)[::-1]
+            selected_feature_indices = sorted_indices[:k]
+
+            selected_features = X.columns[selected_feature_indices]
+            selected_scores = fisher_scores[selected_feature_indices]
+            feature_info = dict(zip(selected_features, selected_scores))
+        if export_feature:
+            return selected_features, feature_info
+        else:
+            return selected_features
+    else:
+        raise KeyError("Error! The given key {} was not included in current version".format(FS_mode))
+
+def feature_prediction(data,ykey,FS_mode="LASSO",classifier="SVM",mode="top-5",all=False,how="cv",loo=False,show_features=False, **kwargs):
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import confusion_matrix, roc_curve
 
@@ -454,25 +586,20 @@ def feature_prediction(
     data = data.fillna(0)
     print(f"Find {data.shape[1]} number of features in general")
 
-    Corr = kwargs.get('Corr', False)
     X_original = data.drop(ykey, axis=1)
-    if Corr:
-        X_original = Corr_filer(X_original, threshold=0.8)
-
     features = X_original.columns
-    original_index = X_original.index
     y = data[ykey]
     X = StandardScaler().fit_transform(X_original)
-    X = pd.DataFrame(X, columns=features, index=original_index)
+    X = pd.DataFrame(X, columns=features)
 
     cv = kwargs.get("cv", 3)
     vif = kwargs.get("vif", False)
     dul_check = kwargs.get("dul_check", False)
     export = kwargs.get("avg", False)
-
+    save_model = kwargs.get("save_model", False)
 
     if not all:
-        selected_features = extract_features(X, y, FS_mode, mode)
+        selected_features = select_features(X, y, FS_mode, mode)
         if show_features:
             print(selected_features)
         model = generate_classifier(classifier)
@@ -517,7 +644,7 @@ def feature_prediction(
         plt.show()
 
     else:
-        Extractors = ['LASSO','TTS','RELF','GNRO','FAOV','FSCR']
+        Extractors = ['LASSO','TTS','RELF','FAOV','FSCR']
         classifiers = ['NN','DT','AD','RF','NY','LR','SVM','KNN']
 
         feature_dict = {}
@@ -525,14 +652,14 @@ def feature_prediction(
         auc_scores = np.zeros((len(Extractors), len(classifiers)))
         sensitivity_scores = np.zeros((len(Extractors), len(classifiers)))
         specificity_scores = np.zeros((len(Extractors), len(classifiers)))
-        chose_model = None
+
         for i, extractor in enumerate(Extractors):
             print("Extractor: {}".format(extractor))
             if show_features:
-                selected_features, feature_info = extract_features(X, y, extractor, mode, show_features=True, dul_check=dul_check)
+                selected_features, feature_info = select_features(X, y, extractor, mode, show_features=True, dul_check=dul_check)
                 feature_dict[extractor] = feature_info
             else:
-                selected_features = extract_features(X, y, extractor, mode, dul_check=dul_check)
+                selected_features = select_features(X, y, extractor, mode, dul_check=dul_check)
             if vif:
                 result = compute_vif(X[selected_features])
                 print("Extractor: {}; Mode: {}".format(extractor, mode))
@@ -548,22 +675,7 @@ def feature_prediction(
                     if loo:
                         cv = LeaveOneOut()
                     cv_mode = cv if isinstance(cv, int) else cv.__class__.__name__
-                    if classifier == "LR" and save_model:
-                        grid_search = GridSearchCV(estimator=model, param_grid=LR_param_grid_L1, cv=5, n_jobs=-1,
-                                                   scoring='accuracy')
-                        grid_search.fit(X_train, y_train)
-                        best_model = grid_search.best_estimator_
-                    else:
-                        y_pred = cross_val_predict(model, X_train, y_train, cv=cv, method='predict_proba')
-                    if save_model and extractor=="LASSO" and classifier=="LR":
-                        model_info = {
-                            'model': best_model,
-                            'feature_names': selected_features
-                        }
-                        joblib.dump(model_info, osp.join("./saved_models", f"LR_{mode}_Grid.pkl"))
-                        model_saved_path = osp.join("./saved_models", f"LR_{mode}_Grid.pkl")
-                        print(f"Best model saved in {model_saved_path}")
-                        sys.exit()
+                    y_pred = cross_val_predict(model, X_train, y_train, cv=cv, method='predict_proba')
                     roc_auc = roc_auc_score(y, y_pred[:, 1])
                 else:
                     model.fit(X_train, y_train)
@@ -571,6 +683,9 @@ def feature_prediction(
                     y_proba = model.predict_proba(X_test)[:, 1]
                     roc_auc = roc_auc_score(y_test, y_proba)
                 auc_scores[i, j] = roc_auc
+                if save_model:
+                    check_path("./saved_models")
+                    from sklearn.pipeline import Pipeline
                 if how == "cv":
                     y_pred_binary = (y_pred[:, 1] >= 0.5).astype(int)
                     tn, fp, fn, tp = confusion_matrix(y_train, y_pred_binary).ravel()
@@ -615,9 +730,8 @@ def feature_prediction(
                         counter_dict[feature_name] = 1
             counter_dict = sorted(counter_dict.items(), key=lambda x:x[1], reverse=True)
             counter_dict = pd.DataFrame(counter_dict, columns=['Feature','Count'])
-            dul_sep = "dul" if not dul_check else "Uni"
-            cor_sep = "cor" if not Corr else "Norm"
-            counter_dict.to_csv("./{}_{}_Feature_info_{}.csv".format(cor_sep, dul_sep, mode),index=None)
+            counter_dict.to_csv(f"./Feature_info_{mode}.csv",index=None)
+
 
         plt.figure(figsize=(10, 6))
         plt.imshow(auc_scores, cmap='viridis', aspect='auto')
@@ -631,7 +745,7 @@ def feature_prediction(
         plt.xlabel('Classifiers')
         plt.ylabel('Feature Selector')
         plt.title('AUC Heatmap')
-        save_path = check_path("./AUC_plot")
+        save_path = check_path("./new_AUC_plot")
         plt.savefig(osp.join(save_path,f"AUC_CrossTable_{mode}_{cv_mode}.jpg"))
         print("The result saved in : {}".format(osp.join(save_path,f"AUC_CrossTable_{mode}_{cv_mode}.jpg")))
 
@@ -664,3 +778,93 @@ def feature_prediction(
         plt.title('Specificity Heatmap')
         save_path = check_path("./Specificity_plot")
         plt.savefig(osp.join(save_path, f"Specificity_CrossTable_{mode}_{cv_mode}.jpg"))
+
+
+def plot_radiomics_feature_heatmap(image, mask, feature_map, name=None, save_path=None):
+    import SimpleITK as sitk
+    from scipy import ndimage as nd
+    from CBB.myos import ifs_Exist
+    if not isinstance(image, sitk.Image):
+        raise TypeError("Error! The given image is not a SimpleITK image object.")
+    if not isinstance(mask, sitk.Image):
+        raise TypeError("Error! The given mask is not a SimpleITK image object.")
+
+    # Check if the image and mask is consistent
+    if not sitk.CheckImageGeometry(image, mask):
+        raise ValueError("Error! The image and mask do not have the same geometry.")
+    
+    if sitk.CheckImageGeometry(image, feature_map):
+        print("Warninig! please recheck the feature map, it has the same geometry as the image.")
+
+    image_np = sitk.GetArrayFromImage(image)
+    mask_np = sitk.GetArrayFromImage(mask).astype(bool)
+    print("image_np shape (z,y,x):", image_np.shape)
+    print("mask_np shape  (z,y,x):", mask_np.shape)
+    z_sums = mask_np.sum(axis=(1, 2))
+    z_idx = int(z_sums.argmax())
+    print("Chosen slice index (axis 0 = z):", z_idx)
+
+    img_slice = image_np[z_idx]
+    mask_slice = mask_np[z_idx]
+
+    try:
+        feature_image = sitk.Resample(
+            feature_map,
+            image,
+            sitk.Transform(),
+            sitk.sitkNearestNeighbor,
+            np.nan,
+            feature_map.GetPixelID(),
+        )
+    except Exception as e:
+        raise RuntimeError(f"Error during resampling feature map: {e}")
+    
+    try:
+        feature_np = sitk.GetArrayFromImage(feature_image)
+        feat_slice = feature_np[z_idx, :, :]
+        img_slice  = image_np[z_idx, :, :]
+        mask_slice = mask_np[z_idx, :, :]
+        valid_mask = mask_slice & ~np.isnan(feat_slice)
+        if not np.any(valid_mask):
+            raise RuntimeError("No valid feature voxels in this slice.")
+        
+        feat_vals = feat_slice[valid_mask]
+        img_p1, img_p99 = np.percentile(img_slice, (1, 99))
+        img_norm = np.clip((img_slice - img_p1) / (img_p99 - img_p1 + 1e-8), 0, 1)
+        f_p5, f_p95 = np.percentile(feat_vals, (5, 95))
+        feat_norm = (feat_slice - f_p5) / (f_p95 - f_p5 + 1e-8)
+        feat_norm = np.clip(feat_norm, 0, 1)
+
+        feat_norm_masked = np.where(valid_mask, feat_norm, np.nan)
+        feat_inside = feat_norm.copy()
+        feat_inside[np.isnan(feat_inside)] = 0
+
+        feat_smooth = nd.gaussian_filter(feat_inside, sigma=0.7)
+        feat_smooth_masked = np.where(mask_slice, feat_smooth, np.nan)
+
+        plt.figure(figsize=(6, 6))
+        plt.imshow(img_norm, cmap="gray")
+        im = plt.imshow(feat_smooth_masked, cmap="jet", alpha=0.8, interpolation='bicubic')
+        plt.colorbar(im, fraction=0.046, pad=0.04, label="Normalized feature value")
+        plt.title(f"Case 0283899 - slice {z_idx}\nwavelet-LHL_glszm_GrayLevelNonUniformity")
+        plt.axis("off")
+        plt.tight_layout()
+        if not save_path:
+            save_dir = check_path(r"./Feature_heatmap")
+            if name:
+                save_path = osp.join(save_dir, f"{name}_feature_heatmap.jpg")
+            else:
+                save_path = osp.join(save_dir, f"feature_heatmap.jpg")
+        plt.savefig(save_path)
+    except Exception as e:
+        raise RuntimeError(f"Error during feature heatmap plotting: {e}")
+    
+
+    
+    
+
+if __name__ == '__main__':
+    mask_dir = r"D:\Pycharm_workplace\COVID19\COVID_DATA\mask"
+    dicom_dir =r"D:\Pycharm_workplace\COVID19\COVID_DATA\new_dcm"
+    label_file = r"D:\Pycharm_workplace\COVID19\GT.txt"
+    extract_features(dicom_dir,mask_dir,label_file)
