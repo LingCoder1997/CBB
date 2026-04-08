@@ -77,7 +77,5 @@ setting:
   # or in a column "Label" in the input csv (batchprocessing)
   label: 1
 
-voxelSetting:
-  voxelBatch: 2000
   
 
