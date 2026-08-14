@@ -119,6 +119,7 @@ def read_sitk_data(path):
     except Exception as e:
         print(f"Error reading image file {path}: {e}")
         return None
+    
 def save_data(image_array, path, reference_image_path):
     try:
         is_Exist(reference_image_path)
